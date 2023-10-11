@@ -114,6 +114,7 @@ public class GameManager : SerializedMonoBehaviour
     {
         if (Input.GetKeyDown(KeyCode.T)) TouchButtonDown(-1);
         if (Input.GetKeyUp(KeyCode.T)) TouchButtonUp(-1);
+
         if (Time.unscaledTime > FPS_timer)
         {
             int fps = (int)(1f / Time.unscaledDeltaTime);

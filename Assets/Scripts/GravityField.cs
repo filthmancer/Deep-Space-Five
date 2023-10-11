@@ -38,6 +38,7 @@ public class GravityField : MonoBehaviour
     // Use this for initialization
     void Start()
     {
+        //# generate visual dropoff for 'gravity mesh' shader
         Keyframe[] k = GravityCurve.keys;
         float fade = (FarRadius - DistAtPower(k[k.Length - 2].value)) / 32;
         background.material.SetFloat("_FadeMaximum", fade);
@@ -57,6 +58,8 @@ public class GravityField : MonoBehaviour
         if (GameManager.instance.MatchCurrentState == GameManager.MatchState.Menu)
             return;
 
+        //# janky update loop test to see if current players
+        //# are within grav range of this body
         for (int i = 0; i < GameManager.Players.Count; i++)
         {
             if (GameManager.Players[i] == null) continue;
@@ -69,6 +72,7 @@ public class GravityField : MonoBehaviour
 
         if (OrbitParent != null)
         {
+            //# Couldn't get real orbiting to work without it falling apart over time
             if (!FieldFlags.HasFlag(Flags.StableOrbit))
             {
                 Vector3 pull = (OrbitParent.transform.position - trans.position).normalized;
@@ -77,6 +81,7 @@ public class GravityField : MonoBehaviour
                 appliedVelocity = Vector3.ClampMagnitude(velocity, maxVelocity);
                 transform.position += appliedVelocity;
             }
+            //# instead lets use a simple rotatearound
             else
             {
                 transform.RotateAround(OrbitParent.trans.position, Vector3.up, Time.deltaTime * maxVelocity);

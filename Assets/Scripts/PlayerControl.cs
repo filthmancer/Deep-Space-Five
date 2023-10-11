@@ -161,30 +161,6 @@ public class PlayerControl : SerializedMonoBehaviour
         }
     }
 
-
-    public void ResetVelocity()
-    {
-        ActiveFields.Clear();
-        GravityVelocity = Vector3.zero;
-        LookVelocity = Vector3.zero;
-        velocity_actual = Vector3.zero;
-        Gravity_added_speed = 0.0F;
-        Control_added_speedmax = 0.1F;
-        SpeedCap = SpeedCap_initial + 20;
-        FuelValues["drift_current"] = 0.0F;//FuelValues["drift_initial"];
-        FuelValues["grav_current"] = 0.0F;
-        //FuelBoost = FuelValues["max"];
-        drift_amount = 0.0F;
-        turn_amount = 0.0F;
-        isDrifting = false;
-        HistoryParticles.Clear();
-        HistoryParticles2.Clear();
-        FuelParticles.Clear();
-        Gravity_braking_multiplier = 1.0F;
-        //VelocityParticles.Play();
-        VelocityParticles.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
-    }
-
     private void Velocity()
     {
         if (GameManager.instance.CheckIfMobile())
@@ -241,7 +217,7 @@ public class PlayerControl : SerializedMonoBehaviour
         velocity_applied = velocity_actual * Time.deltaTime * velocity_applied_rate;
     }
 
-    public void CalculateControl()
+    private void CalculateControl()
     {
         Vector3 velocity_actual_normalized = velocity_actual.normalized;
         Vector3 cross = Vector3.Cross((velocity_actual).normalized, Vector3.up).normalized;
@@ -287,7 +263,6 @@ public class PlayerControl : SerializedMonoBehaviour
         }
         else
         {
-            //VelocityParticles.Stop();
             //# Remove slowdown / speedup multipliers 
             if (velocity_applied_rate > 1.0F) velocity_applied_rate -= ControlValues["handbrake_decrease"];
             else if (velocity_applied_rate < 1.0F) velocity_applied_rate += ControlValues["handbrake_decrease"];
@@ -304,23 +279,25 @@ public class PlayerControl : SerializedMonoBehaviour
             isDrifting = true;
         }
 
+        //# Increase drift turn rate the closer we are to a grav body
         float gravFactor = (GravityVelocity.magnitude / GravityValues["speedmax_actual"]);
+        //# Increase drift rate closer we are to max speed cap
         float speedCapFactor = SpeedCap / MaxSpeedCap();
-        //Debug.Log(gravFactor + ":" + GravityVelocity.magnitude + " : " + GravityValues["speedmax_actual"]);
 
         driftRange = 18F + (4 * gravFactor) + (5F * speedCapFactor);
+
+        //# The turn speeed we have while drifting
         float driftMaximum = driftRange;
         float driftMinimum = -driftRange;
         float driftIncrease = 1.5F + (0.4F * (gravFactor) + (1.2F * (speedCapFactor)));
 
+        //# the turn speed we have while just 'turning'
         float turnRange = 0.35F + (0.1F * FuelCharging) + (1.8F * (speedCapFactor));
         float turnMaximum = turnRange;
         float turnMinimum = -turnRange;
         float turnIncrease = turnRange / 1.9F;
 
         int turn_dir = left ? 1 : right ? -1 : 0;
-
-
         bool noDirectionDown = !left && !right;
         bool oppositeDirectionDown = turn_amount != 0 && turn_dir != Mathf.Sign(turn_amount);
         if (noDirectionDown || oppositeDirectionDown)
@@ -350,7 +327,6 @@ public class PlayerControl : SerializedMonoBehaviour
             brakingForce *= 1 + driftRatio;
             if (left || right)
             {
-
                 //# Apply a slowdown multiplier as you hold down the brake
                 velocity_applied_rate = Mathf.Clamp(velocity_applied_rate - ControlValues["handbrake_decrease"], ControlValues["handbrake_min"], 1.0F);
                 //velocity_actual = Vector3.ClampMagnitude(velocity_actual, velocity_actual.magnitude * 0.999F);
@@ -359,16 +335,19 @@ public class PlayerControl : SerializedMonoBehaviour
             //# Apply braking force
             velocity_actual = velocity_actual_normalized * (velocity_actual.magnitude - brakingForce);
 
-            VelocityParticles.emissionRate = 20 + (150 * (driftRatio));
 
+
+            //# If we are braking, lower gravity input to compensate for slowed actual speed
             Gravity_braking_multiplier = 1.0F - (ControlValues["braking_gravity_decrease"]);// * driftRatio);
 
-            var velParticleMain = VelocityParticles.main;
-            velParticleMain.startLifetimeMultiplier = 0.2F + driftRatio;
+            //TODO - visual leftover, segment to vis component
+            VelocityParticles.emissionRate = 20 + (150 * (driftRatio));
+            VelocityParticles.main.startLifetimeMultiplier = 0.2F + driftRatio;
             VelocityParticles_Parent.transform.localRotation = Quaternion.Euler(0, 60 * turn_dir, 0);//.LookAt(cross * turn_dir);
 
             LookVelocity = (velocity_actual_normalized + drift).normalized;
 
+            //# Increase fuel based on current drift
             FuelValues["drift_current"] = FuelValues["drift_increase_rate"] * (1.0F + driftRatio * 0.4F) * Time.deltaTime;
             FuelBoost = Mathf.Clamp(FuelBoost + FuelValues["drift_current"], FuelValues["min"], FuelValues["max"]);
         }
@@ -376,14 +355,17 @@ public class PlayerControl : SerializedMonoBehaviour
         {
             turn_amount += (turnIncrease * turn_dir) * Time.deltaTime;
             GameManager.instance.debug.text = "TURN: " + turn_amount.ToString("0.0");
+            //# soft clamp the max turn
+            //# in the past I tried fiddling with an even softer clamp
+            //# for turning to contrast the hard clamp of drifting
             if (turn_amount > turnMaximum || turn_amount < turnMinimum)
             {
                 turn_amount *= 0.95F;
             }
-            // turn_amount = Mathf.Clamp(turn_amount + (turnIncrease * turn_dir), turnMinimum, turnMaximum);
+
+            //# reset 'turn' to the real velocity if there is no input
             if (turn_amount != 0.0F) turn = (cross * turn_amount);
             else turn = velocity_actual_normalized;
-
 
             //# Real turning power, based on fuel 
             float rate = 0.45F + (FuelCharging * 0.55F);
@@ -392,6 +374,7 @@ public class PlayerControl : SerializedMonoBehaviour
             velocity_actual_normalized.Normalize();
             velocity_actual = velocity_actual_normalized * velocity_actual.magnitude;
 
+            //# Apply fuel boost if there is any
             if (FuelBoost > 0.0F)
             {
                 FuelBoostActual = Mathf.Lerp(FuelBoostActual, FuelBoost, Time.deltaTime * 3);
@@ -405,14 +388,13 @@ public class PlayerControl : SerializedMonoBehaviour
                     velocity_actual = velocity_actual.normalized * (velocity_actual.magnitude * (1 + Time.deltaTime * FuelCharging));
                 }
 
-
+                //# do a little increase of speed cap based on fuel
+                //# for some extra oomph
                 SpeedCap += FuelCharging * 0.05F;
             }
 
             LookVelocity = (velocity_actual_normalized + turn).normalized;
         }
-
-
     }
 
     public void CalculateGravity()
@@ -531,14 +513,44 @@ public class PlayerControl : SerializedMonoBehaviour
     }
 
     #region States
+    /// <summary>
+    /// Player will be immune to crashing or scoring and won't move
+    /// </summary>
+    /// <param name="time"></param>
     public void SetImmunityMode(float time)
     {
         immunity_mode = time;
     }
 
+    /// <summary>
+    /// Apply an immediate fuel amount
+    /// </summary>
     public void BurstChangeSpeedCap()
     {
         FuelBoost = Mathf.Clamp(FuelBoost + FuelValues["burst_amount"], 0.0F, FuelValues["max"]);
+    }
+
+    public void ResetVelocity()
+    {
+        ActiveFields.Clear();
+        GravityVelocity = Vector3.zero;
+        LookVelocity = Vector3.zero;
+        velocity_actual = Vector3.zero;
+        Gravity_added_speed = 0.0F;
+        Control_added_speedmax = 0.1F;
+        SpeedCap = SpeedCap_initial + 20;
+        FuelValues["drift_current"] = 0.0F;//FuelValues["drift_initial"];
+        FuelValues["grav_current"] = 0.0F;
+        //FuelBoost = FuelValues["max"];
+        drift_amount = 0.0F;
+        turn_amount = 0.0F;
+        isDrifting = false;
+        HistoryParticles.Clear();
+        HistoryParticles2.Clear();
+        FuelParticles.Clear();
+        Gravity_braking_multiplier = 1.0F;
+        //VelocityParticles.Play();
+        VelocityParticles.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
     }
 
     private void UpdateCurrentState(GameManager.MatchState state)
@@ -554,7 +566,7 @@ public class PlayerControl : SerializedMonoBehaviour
         }
     }
 
-    public void UpdateVisuals()
+    private void UpdateVisuals()
     {
         t_modelParent.gameObject.SetActive(true);
         for (int i = 0; i < ActiveFields.Count; i++)
